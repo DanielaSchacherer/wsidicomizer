@@ -32,6 +32,7 @@ from wsidicomizer.extras.openslide.openslide import (
     _read_region,
     convert_argb_to_rgba,
 )
+from pathlib import Path
 from wsidicomizer.sources.openslide_like import OpenSlideLikeLevelImageData
 
 """
@@ -88,6 +89,15 @@ class OpenSlideLevelImageData(OpenSlideLikeLevelImageData):
             encoder,
         )
         self._osr = open_slide._osr
+        # keep reference to the OpenSlide object so we can attempt to close
+        # and re-open it if low-level reads fail. Also try to capture a
+        # filepath for re-opening if the OpenSlide instance exposes one.
+        self._openslide = open_slide
+        self._openslide_filepath: Optional[Union[str, Path]] = None
+        for attr in ("_filename", "filename", "path", "_path"):
+            if hasattr(open_slide, attr):
+                self._openslide_filepath = getattr(open_slide, attr)
+                break
 
     def stitch_tiles(self, region: Region, path: str, z: float, threads: int) -> Image:
         """Overrides ImageData stitch_tiles() to read reagion directly from
@@ -151,12 +161,36 @@ class OpenSlideLevelImageData(OpenSlideLikeLevelImageData):
                 region.size.width,
                 region.size.height,
             )
-        except Exception as e:
-            print('This is it', e)
-            if settings.fallback_to_blank_tile_on_error:
-                print('will return nothing')
-                return None
-            raise
+        except Exception:
+            # On low-level read errors, return None for this region so the
+            # caller can continue with the next coordinates. Also attempt to
+            # close and re-open the underlying OpenSlide object so future
+            # reads may succeed.
+            try:
+                # try to close existing OpenSlide instance if it exposes close()
+                close_fn = getattr(self._openslide, "close", None)
+                if callable(close_fn):
+                    try:
+                        close_fn()
+                    except Exception:
+                        # ignore errors while closing
+                        pass
+
+                # attempt to re-open using stored filepath if available
+                if self._openslide_filepath:
+                    try:
+                        new_open_slide = OpenSlide(self._openslide_filepath)
+                        # replace references used by this object
+                        self._openslide = new_open_slide
+                        self._osr = new_open_slide._osr
+                    except Exception:
+                        # ignore reopen errors; we'll just return None for now
+                        pass
+            except Exception:
+                # any unexpected error during cleanup/reopen should not
+                # propagate to the caller for this region
+                pass
+            return None
         region_data.shape = (region.size.height, region.size.width, CHANNELS)
         if self._detect_blank_tile(region_data):
             return None
