@@ -172,7 +172,8 @@ class OpenSlideLevelImageData(OpenSlideLikeLevelImageData):
                 if callable(close_fn):
                     try:
                         close_fn()
-                    except Exception:
+                    except Exception as e:
+                        print('e', e)
                         # ignore errors while closing
                         pass
 
