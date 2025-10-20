@@ -274,6 +274,7 @@ class WsiDicomizer(WsiDicom):
             )
         elif preferred_source.is_supported(filepath):
             selected_source = preferred_source
+        print(selected_source, 'this is selected source')
         if selected_source is None:
             raise NotImplementedError(f"{filepath} is not supported")
         return selected_source
