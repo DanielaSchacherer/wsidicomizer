@@ -151,8 +151,10 @@ class OpenSlideLevelImageData(OpenSlideLikeLevelImageData):
                 region.size.width,
                 region.size.height,
             )
-        except Exception:
+        except Exception as e:
+            print('This is it', e)
             if settings.fallback_to_blank_tile_on_error:
+                print('will return nothing')
                 return None
             raise
         region_data.shape = (region.size.height, region.size.width, CHANNELS)
